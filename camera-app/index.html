@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <title>Camera Viewer</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #camera-view {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 24px;
+            padding: 20px;
+            background: linear-gradient(transparent, rgba(0,0,0,0.7));
+            z-index: 10;
+        }
+
+        .btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.8);
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: background 0.2s, transform 0.1s;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .btn:active {
+            background: rgba(255,255,255,0.35);
+            transform: scale(0.92);
+        }
+
+        #capture-btn {
+            width: 72px;
+            height: 72px;
+            border: 3px solid #fff;
+            background: rgba(255,255,255,0.2);
+            font-size: 28px;
+        }
+
+        #error-screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 32px;
+            height: 100%;
+            width: 100%;
+        }
+
+        #error-screen .icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        #error-screen h2 {
+            margin-bottom: 12px;
+            font-size: 20px;
+        }
+
+        #error-screen p {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.5;
+            max-width: 300px;
+        }
+
+        #error-screen button {
+            margin-top: 24px;
+            padding: 12px 32px;
+            border-radius: 8px;
+            border: none;
+            background: #2196F3;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #toast {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #toast.show {
+            opacity: 1;
+        }
+
+        #zoom-indicator {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #zoom-indicator.show {
+            opacity: 1;
+        }
+
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <video id="camera-view" autoplay playsinline muted></video>
+
+    <div id="error-screen">
+        <div class="icon">&#128247;</div>
+        <h2>Camera Access Needed</h2>
+        <p id="error-message">Please allow camera access to use this app. Check your browser settings if the permission was denied.</p>
+        <button onclick="startCamera()">Try Again</button>
+    </div>
+
+    <div id="controls">
+        <button class="btn" id="switch-btn" title="Switch Camera">&#x21c4;</button>
+        <button class="btn" id="capture-btn" title="Take Photo">&#x25cb;</button>
+        <button class="btn" id="flash-btn" title="Toggle Flashlight">&#x26a1;</button>
+    </div>
+
+    <div id="zoom-indicator">1.0x</div>
+    <div id="toast"></div>
+    <canvas id="capture-canvas"></canvas>
+
+    <script>
+        const video = document.getElementById('camera-view');
+        const errorScreen = document.getElementById('error-screen');
+        const errorMessage = document.getElementById('error-message');
+        const switchBtn = document.getElementById('switch-btn');
+        const captureBtn = document.getElementById('capture-btn');
+        const flashBtn = document.getElementById('flash-btn');
+        const zoomIndicator = document.getElementById('zoom-indicator');
+        const toast = document.getElementById('toast');
+        const canvas = document.getElementById('capture-canvas');
+
+        let currentStream = null;
+        let facingMode = 'environment'; // rear camera by default
+        let currentTrack = null;
+        let flashOn = false;
+        let currentZoom = 1;
+        let minZoom = 1;
+        let maxZoom = 1;
+        let zoomHideTimeout = null;
+
+        async function startCamera() {
+            errorScreen.style.display = 'none';
+            video.style.display = 'block';
+
+            // Stop any existing stream
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: facingMode,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                };
+
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+
+                currentTrack = currentStream.getVideoTracks()[0];
+
+                // Check for zoom capability
+                const capabilities = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
+                if (capabilities.zoom) {
+                    minZoom = capabilities.zoom.min;
+                    maxZoom = capabilities.zoom.max;
+                    currentZoom = capabilities.zoom.min;
+                }
+
+                // Check for torch capability
+                if (capabilities.torch) {
+                    flashBtn.style.display = 'flex';
+                } else {
+                    flashBtn.style.display = 'flex'; // Still show, will show toast if unsupported
+                }
+
+                flashOn = false;
+
+            } catch (err) {
+                console.error('Camera error:', err);
+                video.style.display = 'none';
+                errorScreen.style.display = 'flex';
+
+                if (err.name === 'NotAllowedError') {
+                    errorMessage.textContent = 'Camera permission was denied. Please allow camera access in your browser settings and try again.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage.textContent = 'No camera found on this device.';
+                } else if (err.name === 'NotReadableError') {
+                    errorMessage.textContent = 'Camera is in use by another application. Close other apps and try again.';
+                } else {
+                    errorMessage.textContent = `Could not access camera: ${err.message}`;
+                }
+            }
+        }
+
+        // Switch between front and rear cameras
+        switchBtn.addEventListener('click', () => {
+            facingMode = facingMode === 'environment' ? 'user' : 'environment';
+            showToast(facingMode === 'user' ? 'Front camera' : 'Rear camera');
+            startCamera();
+        });
+
+        // Take a photo and download it
+        captureBtn.addEventListener('click', () => {
+            if (!currentStream) return;
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0);
+
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                a.download = `photo-${timestamp}.jpg`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('Photo saved');
+            }, 'image/jpeg', 0.92);
+        });
+
+        // Toggle flashlight/torch
+        flashBtn.addEventListener('click', async () => {
+            if (!currentTrack) return;
+
+            const capabilities = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
+            if (!capabilities.torch) {
+                showToast('Flashlight not available');
+                return;
+            }
+
+            flashOn = !flashOn;
+            try {
+                await currentTrack.applyConstraints({
+                    advanced: [{ torch: flashOn }]
+                });
+                showToast(flashOn ? 'Flash on' : 'Flash off');
+            } catch (err) {
+                showToast('Could not toggle flash');
+                flashOn = false;
+            }
+        });
+
+        // Pinch-to-zoom support
+        let initialPinchDistance = null;
+        let initialZoom = 1;
+
+        video.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                initialPinchDistance = getDistance(e.touches[0], e.touches[1]);
+                initialZoom = currentZoom;
+            }
+        }, { passive: true });
+
+        video.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2 && initialPinchDistance !== null) {
+                const currentDistance = getDistance(e.touches[0], e.touches[1]);
+                const scale = currentDistance / initialPinchDistance;
+                let newZoom = initialZoom * scale;
+                newZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
+                applyZoom(newZoom);
+            }
+        }, { passive: true });
+
+        video.addEventListener('touchend', () => {
+            initialPinchDistance = null;
+        }, { passive: true });
+
+        function getDistance(touch1, touch2) {
+            const dx = touch1.clientX - touch2.clientX;
+            const dy = touch1.clientY - touch2.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function applyZoom(zoom) {
+            if (!currentTrack || maxZoom <= minZoom) return;
+            currentZoom = zoom;
+            try {
+                currentTrack.applyConstraints({
+                    advanced: [{ zoom: currentZoom }]
+                });
+            } catch (err) {
+                // Zoom not supported
+            }
+
+            zoomIndicator.textContent = `${currentZoom.toFixed(1)}x`;
+            zoomIndicator.classList.add('show');
+            clearTimeout(zoomHideTimeout);
+            zoomHideTimeout = setTimeout(() => {
+                zoomIndicator.classList.remove('show');
+            }, 1500);
+        }
+
+        function showToast(message) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        // Register service worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(() => {});
+        }
+
+        // Start camera on load
+        startCamera();
+    </script>
+</body>
+</html>
