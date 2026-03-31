@@ -34,31 +34,44 @@ VOCAB = [
 ]
 
 
-def _score_token(context: str, token: str) -> float:
-    """Deterministic score for a token given the full generation context."""
-    digest = hashlib.sha256(f"{context}|{token}".encode()).hexdigest()
+def _score_token(prompt: str, response_so_far: str, token: str) -> float:
+    """Deterministic score for a token given the prompt and response context.
+
+    The prompt seeds the distribution but is treated as fixed input — only the
+    response-side context evolves during generation.
+    """
+    # Hash includes both prompt (for conditioning) and response (for autoregression)
+    seed = f"prompt={prompt}|response={response_so_far}|token={token}"
+    digest = hashlib.sha256(seed.encode()).hexdigest()
     base = int(digest[:8], 16) / 0xFFFFFFFF
 
-    context_lower = context.lower()
-    context_words = set(context_lower.split())
+    prompt_lower = prompt.lower()
+    prompt_words = set(prompt_lower.split())
+    response_words = set(response_so_far.lower().split()) if response_so_far else set()
 
-    # Boost contextually relevant tokens
-    if token in context_words:
-        base *= 3.0
+    # Tokens related to the prompt are more probable (the model "understands" the question)
+    if token in prompt_words:
+        base *= 4.0
+
+    # Tokens already in the response get a mild coherence boost
+    if token in response_words:
+        base *= 1.5
+
     # Short common words are naturally more probable
     if len(token) <= 3:
         base *= 1.8
-    # Penalise immediate repetition of the last word
-    last_word = context_lower.split()[-1] if context_lower.split() else ""
+
+    # Penalise immediate repetition of the last generated word
+    last_word = response_so_far.split()[-1].lower() if response_so_far else ""
     if token == last_word:
         base *= 0.1
 
     return base
 
 
-def _predict(context: str) -> List[TokenPrediction]:
-    """Generate a full probability distribution over VOCAB given context."""
-    scores = [_score_token(context, tok) for tok in VOCAB]
+def _predict(prompt: str, response_so_far: str) -> List[TokenPrediction]:
+    """Generate a probability distribution conditioned on prompt + response so far."""
+    scores = [_score_token(prompt, response_so_far, tok) for tok in VOCAB]
     total = sum(scores)
     return [
         TokenPrediction(token_id=i, token=tok, probability=s / total)
@@ -67,32 +80,28 @@ def _predict(context: str) -> List[TokenPrediction]:
 
 
 def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
-    """Generate text token-by-token using bottom-k or top-k selection.
+    """Generate a response to the prompt using bottom-k or top-k selection.
 
-    At each step the least (or most) probable token from the k candidates
-    is chosen deterministically.
+    The prompt is treated as fixed input.  Tokens are generated autoregressively
+    for the response only, conditioned on the prompt at each step.
     """
-    context = prompt
-    tokens = []
+    response_tokens = []
     guardrail = BottomKGuardrail(k=k)
 
     for _ in range(length):
-        predictions = _predict(context)
+        response_so_far = " ".join(response_tokens)
+        predictions = _predict(prompt, response_so_far)
 
         if use_bottom:
             candidates = guardrail.apply(predictions)
-            # Pick the single least probable token (first in ascending order)
             chosen = candidates[0]
         else:
             ranked = sorted(predictions, key=lambda p: p.probability, reverse=True)
-            candidates = ranked[:k]
-            # Pick the single most probable token
-            chosen = candidates[0]
+            chosen = ranked[0]
 
-        tokens.append(chosen.token)
-        context = context + " " + chosen.token
+        response_tokens.append(chosen.token)
 
-    return " ".join(tokens)
+    return " ".join(response_tokens)
 
 
 def main() -> None:
@@ -114,21 +123,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    print(f"User:  {args.prompt}\n")
+
     if args.top_k_compare:
         top_response = generate(args.prompt, args.k, args.length, use_bottom=False)
-        print(f"Prompt:  \"{args.prompt}\"\n")
         print(f"── Top-k response (k={args.k}) ──")
-        print(f"  {args.prompt} {top_response}\n")
+        print(f"  Assistant: {top_response}\n")
 
     bottom_response = generate(args.prompt, args.k, args.length, use_bottom=True)
-
-    if args.top_k_compare:
-        print(f"── Bottom-k response (k={args.k}) ──")
-        print(f"  {args.prompt} {bottom_response}")
-    else:
-        print(f"Prompt:  \"{args.prompt}\"\n")
-        print(f"── Bottom-k response (k={args.k}) ──")
-        print(f"  {args.prompt} {bottom_response}")
+    print(f"── Bottom-k response (k={args.k}) ──")
+    print(f"  Assistant: {bottom_response}")
 
 
 if __name__ == "__main__":
