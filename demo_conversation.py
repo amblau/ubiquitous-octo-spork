@@ -33,38 +33,166 @@ VOCAB = [
     "nebula", "axiom", "prism", "vortex", "epoch",
 ]
 
+# ── Simple grammar model ────────────────────────────────────────────────────
+# Word categories used for positional / grammatical heuristics.
+
+DETERMINERS = {"the", "a", "an", "this", "each", "one", "many", "all"}
+NOUNS = {
+    "cat", "dog", "fish", "bird", "tree", "moon", "star", "river", "cloud",
+    "stone", "animal", "pet", "fur", "world", "xylophone", "quasar", "zephyr",
+    "fjord", "glyph", "nebula", "axiom", "prism", "vortex", "epoch",
+}
+ADJECTIVES = {"small", "big", "soft", "warm", "kind", "known", "many"}
+VERBS = {
+    "is", "was", "are", "were", "has", "have", "been", "can", "will", "do",
+    "said", "like", "be",
+}
+ADVERBS = {"very", "most", "not", "also", "often", "about", "up", "out"}
+PREPOSITIONS = {"of", "in", "to", "for", "on", "with", "as", "at", "from", "by"}
+CONJUNCTIONS = {"and", "or", "but", "that", "when", "if", "which", "how", "what"}
+
+# Bigram-style transition weights: given the POS of the previous token,
+# which POS categories are likely to follow?  Higher = more probable.
+_TRANSITIONS = {
+    "START":       {"DETERMINER": 3.0, "NOUN": 2.0, "ADJECTIVE": 1.5, "PRONOUN": 2.5, "ADVERB": 1.0},
+    "DETERMINER":  {"NOUN": 5.0, "ADJECTIVE": 3.0},
+    "ADJECTIVE":   {"NOUN": 5.0, "ADJECTIVE": 1.5, "CONJUNCTION": 0.5},
+    "NOUN":        {"VERB": 4.0, "PREPOSITION": 3.0, "CONJUNCTION": 2.0, "ADVERB": 1.0},
+    "VERB":        {"DETERMINER": 3.0, "NOUN": 2.5, "ADJECTIVE": 2.0, "ADVERB": 2.0, "PREPOSITION": 2.0, "PRONOUN": 2.0},
+    "PREPOSITION": {"DETERMINER": 3.5, "NOUN": 3.0, "ADJECTIVE": 1.5},
+    "ADVERB":      {"VERB": 3.0, "ADJECTIVE": 2.5, "ADVERB": 1.0},
+    "CONJUNCTION":  {"DETERMINER": 3.0, "NOUN": 2.0, "PRONOUN": 2.0, "ADJECTIVE": 1.5, "VERB": 1.5},
+    "PRONOUN":     {"VERB": 4.5, "ADVERB": 1.5},
+}
+
+PRONOUNS = {"it", "there", "this", "what"}
+
+
+def _pos(token: str) -> str:
+    if token in DETERMINERS:
+        return "DETERMINER"
+    if token in PRONOUNS:
+        return "PRONOUN"
+    if token in NOUNS:
+        return "NOUN"
+    if token in ADJECTIVES:
+        return "ADJECTIVE"
+    if token in VERBS:
+        return "VERB"
+    if token in ADVERBS:
+        return "ADVERB"
+    if token in PREPOSITIONS:
+        return "PREPOSITION"
+    if token in CONJUNCTIONS:
+        return "CONJUNCTION"
+    return "NOUN"  # default
+
+
+def _transition_weight(prev_pos: str, token: str) -> float:
+    """Return how grammatically likely `token` is to follow a word of `prev_pos`."""
+    tok_pos = _pos(token)
+    weights = _TRANSITIONS.get(prev_pos, {})
+    return weights.get(tok_pos, 0.15)  # small fallback for unlikely transitions
+
+
+# ── Bigram affinity ─────────────────────────────────────────────────────────
+# Hand-picked bigrams that are natural in English to give the mock model
+# some semblance of fluency.
+
+_BIGRAM_BOOST = {
+    ("a", "cat"): 6.0, ("a", "dog"): 5.0, ("a", "small"): 4.0, ("a", "big"): 4.0,
+    ("a", "pet"): 5.0, ("a", "bird"): 4.5, ("a", "fish"): 4.5, ("a", "kind"): 3.0,
+    ("a", "warm"): 3.0, ("a", "soft"): 3.0, ("an", "animal"): 6.0, ("an", "epoch"): 4.0,
+    ("the", "cat"): 5.0, ("the", "dog"): 5.0, ("the", "moon"): 6.0, ("the", "star"): 5.0,
+    ("the", "world"): 5.5, ("the", "river"): 5.0, ("the", "cloud"): 4.5,
+    ("the", "tree"): 4.5, ("the", "stone"): 4.0, ("the", "bird"): 4.5,
+    ("is", "a"): 5.0, ("is", "an"): 4.0, ("is", "the"): 3.0, ("is", "not"): 4.5,
+    ("is", "very"): 4.0, ("is", "often"): 4.0, ("is", "also"): 3.5,
+    ("is", "known"): 4.5, ("is", "small"): 3.5, ("is", "warm"): 3.5,
+    ("was", "a"): 4.5, ("was", "the"): 3.5, ("was", "not"): 4.0,
+    ("are", "small"): 3.0, ("are", "known"): 4.0, ("are", "often"): 3.5,
+    ("has", "been"): 6.0, ("has", "a"): 3.5, ("have", "been"): 5.5,
+    ("have", "soft"): 3.0, ("have", "warm"): 3.0,
+    ("it", "is"): 6.0, ("it", "has"): 5.0, ("it", "was"): 5.0, ("it", "can"): 4.0,
+    ("can", "be"): 5.5, ("will", "be"): 4.5, ("will", "not"): 4.0,
+    ("not", "be"): 3.5, ("not", "a"): 3.0,
+    ("cat", "is"): 5.0, ("cat", "has"): 4.5, ("cat", "was"): 3.5,
+    ("dog", "is"): 5.0, ("dog", "has"): 4.5,
+    ("small", "animal"): 5.0, ("small", "cat"): 4.5, ("small", "pet"): 4.5,
+    ("soft", "fur"): 6.0, ("warm", "fur"): 5.0,
+    ("pet", "that"): 4.0, ("pet", "with"): 3.5,
+    ("animal", "that"): 4.0, ("animal", "with"): 3.5,
+    ("known", "for"): 5.5, ("known", "as"): 5.0,
+    ("often", "known"): 4.0, ("often", "said"): 3.0,
+    ("with", "soft"): 4.5, ("with", "warm"): 4.0, ("with", "fur"): 4.0,
+    ("of", "the"): 5.0, ("in", "the"): 5.0, ("for", "the"): 4.0,
+    ("and", "is"): 3.0, ("and", "has"): 3.0, ("and", "soft"): 3.0,
+    ("that", "is"): 5.0, ("that", "has"): 4.0, ("that", "can"): 3.5,
+    ("very", "soft"): 4.5, ("very", "warm"): 4.0, ("very", "small"): 4.0,
+    ("most", "often"): 4.0, ("by", "many"): 3.5,
+    ("about", "the"): 4.0, ("about", "a"): 3.0,
+}
+
+# Prompt-keyword → topic-relevant tokens with boost factors.
+_TOPIC_ASSOCIATIONS = {
+    "cat": {"cat": 8, "pet": 6, "animal": 6, "fur": 5, "soft": 4, "warm": 4, "small": 3, "known": 3, "kind": 3},
+    "dog": {"dog": 8, "pet": 6, "animal": 6, "fur": 4, "warm": 3, "kind": 3, "known": 3, "big": 3},
+    "moon": {"moon": 8, "star": 5, "cloud": 4, "stone": 3, "world": 3, "nebula": 3, "epoch": 2},
+    "star": {"star": 8, "moon": 5, "cloud": 4, "nebula": 4, "world": 3, "quasar": 3},
+    "fish": {"fish": 8, "animal": 5, "river": 5, "water": 3, "small": 3, "known": 3},
+    "bird": {"bird": 8, "animal": 5, "tree": 4, "small": 3, "known": 3, "cloud": 3},
+    "tree": {"tree": 8, "big": 4, "world": 3, "known": 3, "stone": 2},
+    "world": {"world": 8, "big": 4, "known": 4, "many": 3, "most": 3},
+    "sky": {"cloud": 5, "star": 5, "moon": 5, "world": 3, "nebula": 3},
+    "blue": {"cloud": 3, "star": 3, "river": 3, "world": 3},
+}
+
 
 def _score_token(prompt: str, response_so_far: str, token: str) -> float:
-    """Deterministic score for a token given the prompt and response context.
-
-    The prompt seeds the distribution but is treated as fixed input — only the
-    response-side context evolves during generation.
-    """
-    # Hash includes both prompt (for conditioning) and response (for autoregression)
+    """Deterministic score for a token given the prompt and response context."""
+    # Base randomness from hash — ensures variety
     seed = f"prompt={prompt}|response={response_so_far}|token={token}"
     digest = hashlib.sha256(seed.encode()).hexdigest()
     base = int(digest[:8], 16) / 0xFFFFFFFF
 
     prompt_lower = prompt.lower()
-    prompt_words = set(prompt_lower.split())
-    response_words = set(response_so_far.lower().split()) if response_so_far else set()
+    prompt_words = set(prompt_lower.replace("?", "").replace("!", "").replace(".", "").split())
+    response_tokens = response_so_far.lower().split() if response_so_far else []
 
-    # Tokens related to the prompt are more probable (the model "understands" the question)
+    # ── Grammar: transition from previous token's POS ──
+    prev_pos = _pos(response_tokens[-1]) if response_tokens else "START"
+    grammar_weight = _transition_weight(prev_pos, token)
+    base *= grammar_weight
+
+    # ── Bigram affinity ──
+    if response_tokens:
+        pair = (response_tokens[-1], token)
+        if pair in _BIGRAM_BOOST:
+            base *= _BIGRAM_BOOST[pair]
+
+    # ── Topic relevance from prompt ──
+    for pw in prompt_words:
+        assoc = _TOPIC_ASSOCIATIONS.get(pw, {})
+        if token in assoc:
+            base *= assoc[token]
+
+    # ── Prompt-word boost (milder than before, grammar matters more) ──
     if token in prompt_words:
-        base *= 4.0
+        base *= 2.0
 
-    # Tokens already in the response get a mild coherence boost
-    if token in response_words:
-        base *= 1.5
+    # ── Repetition penalty: penalise ALL prior occurrences, stacking ──
+    occurrences = response_tokens.count(token)
+    if occurrences > 0:
+        # Each occurrence applies a multiplicative penalty
+        base *= 0.08 ** occurrences
+        # Extra penalty if token appeared in the last 3 positions
+        recent = response_tokens[-3:] if len(response_tokens) >= 3 else response_tokens
+        if token in recent:
+            base *= 0.01
 
-    # Short common words are naturally more probable
-    if len(token) <= 3:
-        base *= 1.8
-
-    # Penalise immediate repetition of the last generated word
-    last_word = response_so_far.split()[-1].lower() if response_so_far else ""
-    if token == last_word:
-        base *= 0.1
+    # ── Mild length-based bias: after 6+ tokens, reduce run-on tendency ──
+    if len(response_tokens) >= 6 and token in CONJUNCTIONS:
+        base *= 0.5
 
     return base
 
@@ -77,6 +205,20 @@ def _predict(prompt: str, response_so_far: str) -> List[TokenPrediction]:
         TokenPrediction(token_id=i, token=tok, probability=s / total)
         for i, (tok, s) in enumerate(zip(VOCAB, scores))
     ]
+
+
+def _filter_repetitions(
+    candidates: List[TokenPrediction], response_tokens: List[str]
+) -> List[TokenPrediction]:
+    """Remove tokens that already appeared in the response, keeping only fresh picks."""
+    from collections import Counter
+    counts = Counter(response_tokens)
+    filtered = [c for c in candidates if counts.get(c.token, 0) == 0]
+    if filtered:
+        return filtered
+    # Fallback: allow tokens used only once
+    relaxed = [c for c in candidates if counts.get(c.token, 0) < 2]
+    return relaxed if relaxed else candidates[:1]
 
 
 def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
@@ -94,10 +236,12 @@ def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
 
         if use_bottom:
             candidates = guardrail.apply(predictions)
+            candidates = _filter_repetitions(candidates, response_tokens)
             chosen = candidates[0]
         else:
             ranked = sorted(predictions, key=lambda p: p.probability, reverse=True)
-            chosen = ranked[0]
+            candidates = ranked[:k]
+            chosen = candidates[0]
 
         response_tokens.append(chosen.token)
 
