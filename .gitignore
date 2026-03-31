@@ -1,2 +1,4 @@
 hello
 hello.o
+__pycache__/
+.pytest_cache/
