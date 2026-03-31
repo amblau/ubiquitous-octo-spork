@@ -273,142 +273,140 @@ def _pick_grammatical_bottom(
 
 
 # ── Top-k: template-based coherent responses ────────────────────────────────
-# Instead of token-by-token generation (which produces grammatical mush even
-# with high-probability tokens), top-k uses pre-written sentence templates
-# keyed on detected prompt topics.  This mirrors how a real LLM would produce
-# a fluent, on-topic answer.
+# These simulate what a real LLM would produce with top-k sampling: fluent,
+# on-topic, natural-sounding answers.  Unlike the bottom-k path, these are
+# not constrained to the mock VOCAB — a real model's top-k draws from its
+# full vocabulary.
 
-# ── Topic responses ──────────────────────────────────────────────────────────
-# Each topic maps to templates grouped by question type.  "default" is used
-# when the question type is not detected.
+# Each topic maps to templates grouped by question type.
 
 _TOPIC_RESPONSES = {
     "cat": {
         "what": [
-            "a cat is a small animal with soft warm fur that is often kept as a pet and it is known to be very kind",
-            "the cat is a small warm animal with soft fur that has been known as a kind pet in the world",
+            "A cat is a small domesticated animal known for its soft fur, independent personality, and sharp senses. Cats have been kept as pets for thousands of years and are one of the most popular companion animals in the world.",
+            "A cat is a furry domesticated mammal that people commonly keep as a pet. They are known for being curious, agile, and affectionate, and they typically have soft fur, retractable claws, and excellent night vision.",
         ],
         "why": [
-            "it is often said that the cat has soft warm fur and this kind small animal can be a very warm pet to have",
-            "many have said the cat is a kind animal with soft fur and it is known as one of the most warm pet in the world",
+            "Cats are popular pets because they are relatively low-maintenance, naturally clean, and form strong bonds with their owners. Their independent nature means they can be left alone for longer periods compared to dogs, which makes them well-suited to many lifestyles.",
+            "There are many reasons people love cats. They are soft, warm, and affectionate companions that can also be quite playful. Their purring has even been shown to have a calming effect on humans.",
         ],
         "how": [
-            "the cat has soft warm fur and it can often be a very kind pet for many in the world",
-            "a cat is known to be very soft and warm and it has often been said that this small animal can be a kind pet",
+            "Cats communicate through a combination of vocalizations like meowing and purring, body language such as tail position and ear orientation, and scent marking. Each cat develops its own unique way of interacting with its owner over time.",
+            "Cats are typically cared for by providing them with fresh food and water, a clean litter box, regular veterinary checkups, and plenty of affection and play. They are generally easy to care for compared to many other pets.",
         ],
         "do": [
-            "the cat is a small warm pet that has soft fur and it can often be very kind to many in the world",
-            "many a cat has been known to have soft warm fur and it is often said to be a very kind small pet",
+            "Yes, cats are known to be quite independent, but they also enjoy companionship and can form deep bonds with their owners. Many cats are playful, curious, and affectionate, though each one has its own unique personality.",
+            "Cats do have a wide range of behaviors and preferences. Some are very social and love attention, while others prefer solitude. Most cats enjoy playing, napping in warm spots, and exploring their surroundings.",
         ],
         "default": [
-            "a cat is a small animal with soft warm fur that is often kept as a pet and is known to be very kind",
-            "the cat is a warm kind animal with soft fur that has been known as a small pet in the world",
+            "A cat is a small domesticated animal with soft fur that is commonly kept as a pet. They are known for being curious, independent, and affectionate companions that have lived alongside humans for thousands of years.",
+            "Cats are small, furry animals that are among the most popular pets worldwide. They are valued for their companionship, playful nature, and ability to form close bonds with their owners.",
         ],
     },
     "dog": {
         "what": [
-            "a dog is a big warm animal with soft fur that is often known as a very kind pet in the world",
-            "the dog is a kind warm animal that has been known as one of the most big pet with soft fur",
+            "A dog is a domesticated animal and one of the most popular pets in the world. Dogs are known for their loyalty, intelligence, and friendly nature, and they come in a wide variety of breeds, sizes, and temperaments.",
+            "A dog is a loyal and social animal that has been a companion to humans for thousands of years. They are highly trainable, affectionate, and are often considered to be a member of the family.",
         ],
         "why": [
-            "it is often said that the dog is a warm kind animal and many have known it as a very big pet with soft fur",
-            "the dog has been known to be very warm and kind and it is often said that this big animal can be a soft pet",
+            "Dogs are beloved because of their unwavering loyalty and companionship. They are social animals that thrive on interaction with humans, and their ability to be trained for a wide range of tasks makes them incredibly versatile partners.",
+            "People love dogs for their warm, friendly nature and their ability to form deep emotional bonds. Dogs are also highly adaptable and can serve as working animals, therapy companions, or simply loving household pets.",
         ],
         "how": [
-            "a dog can be very warm and kind and it has soft fur that is often known in many a world as a big pet",
-            "the dog is known to have soft warm fur and it can often be a very kind big animal for many",
+            "Dogs communicate through barking, tail wagging, body posture, and facial expressions. They are highly attuned to human emotions and can often sense when their owner is happy, sad, or stressed.",
+            "Caring for a dog involves providing regular meals, daily exercise, veterinary care, and plenty of social interaction. Dogs are active animals that need both physical and mental stimulation to stay happy and healthy.",
         ],
         "do": [
-            "many a dog has been known to be very warm and kind with soft fur and it is often a big pet in the world",
-            "the dog is a kind warm animal that can often have soft fur and has been known to be a very big pet",
+            "Yes, dogs are social animals that generally enjoy the company of people and other animals. They are known for their enthusiasm, playfulness, and eagerness to please, which makes them wonderful companions.",
+            "Dogs do have a wide range of behaviors depending on their breed and personality. Most dogs enjoy playing, going for walks, and spending time with their owners, and they respond well to positive reinforcement and training.",
         ],
         "default": [
-            "a dog is a big warm animal with soft fur that has been known as a very kind pet for many an epoch",
-            "the dog is often known as a kind warm pet with soft fur and it is a very big animal in the world",
+            "A dog is a loyal, friendly domesticated animal that has been a human companion for thousands of years. They come in many breeds and sizes and are known for their intelligence, trainability, and affectionate nature.",
+            "Dogs are among the most popular pets in the world, known for their loyalty, warmth, and ability to form strong bonds with people. They are social animals that thrive on companionship and interaction.",
         ],
     },
     "moon": {
         "what": [
-            "the moon is a big stone world that can be seen with the star and cloud in many an epoch",
-            "the moon is a known world of stone that has been in the cloud with many a star for an epoch",
+            "The moon is Earth's only natural satellite, orbiting our planet at an average distance of about 384,400 kilometers. It is a rocky, airless body covered in craters, and its gravitational pull is responsible for ocean tides on Earth.",
+            "The moon is a celestial body that orbits Earth and is visible in the night sky. It has no atmosphere or liquid water, and its surface is covered with craters, mountains, and plains of hardened lava called maria.",
         ],
         "why": [
-            "the moon is a big stone that has been known for many an epoch and it can often be seen with the star and cloud",
-            "it is often said that the moon is a known world of stone and it has been with the star for many an epoch",
+            "The moon appears to change shape throughout the month because of the way sunlight illuminates its surface as it orbits Earth. These phases cycle from new moon to full moon and back roughly every 29.5 days.",
+            "The moon is significant because its gravitational pull creates tides, stabilizes Earth's axial tilt, and has influenced life and culture on our planet for billions of years.",
         ],
         "how": [
-            "the moon can often be seen as a big stone in the cloud and it is known to have been there for many an epoch",
-            "the moon has been known as a big world of stone with the star and cloud for many an epoch",
+            "The moon was likely formed about 4.5 billion years ago when a Mars-sized object collided with the early Earth. The debris from this impact eventually coalesced into the moon we see today.",
+            "The moon orbits Earth once approximately every 27.3 days and rotates on its own axis at the same rate, which is why we always see the same side facing us.",
         ],
         "default": [
-            "the moon is a big known world of stone that can often be seen with the star and cloud for many an epoch",
-            "the moon has been known for many an epoch as a big stone world with the star and cloud",
+            "The moon is Earth's natural satellite, a rocky body that orbits our planet and is visible in the night sky. It plays an important role in creating ocean tides and has been a source of fascination for humans throughout history.",
+            "The moon is a celestial body that has orbited Earth for billions of years. It has no atmosphere, is covered in craters, and its phases have been used to mark time by cultures around the world.",
         ],
     },
     "bird": {
         "what": [
-            "a bird is a small animal that can often be seen in the tree and it is known to be in many a cloud in the world",
-            "the bird is a small kind animal that is known for the tree and it can often be seen in the cloud",
+            "A bird is a warm-blooded vertebrate with feathers, wings, and a beak. Most birds can fly, though some species like penguins and ostriches are flightless. There are over 10,000 known species of birds worldwide.",
+            "Birds are a diverse group of animals characterized by their feathers, beaks, and ability to lay eggs. They inhabit every continent and have adapted to a wide range of environments, from tropical forests to arctic tundra.",
         ],
         "do": [
-            "many a bird has been known to be in the tree and it can often be seen as a small kind animal in the cloud",
-            "the bird is a small animal that can often be in the tree and it has been known to be in many a cloud",
+            "Yes, birds exhibit a wide range of fascinating behaviors including complex songs, elaborate courtship displays, and impressive feats of migration. Many species travel thousands of miles each year between breeding and wintering grounds.",
+            "Birds do many remarkable things. They build intricate nests, care for their young, communicate through song, and some species can even use tools or mimic human speech.",
         ],
         "where": [
-            "the bird can often be seen in the tree and it is known to be a small animal in many a cloud in the world",
-            "a bird is known to be in the tree and it has been seen in the cloud of many a world",
+            "Birds can be found on every continent and in nearly every habitat on Earth. Many species migrate seasonally, traveling to warmer regions during winter and returning to breeding grounds in spring.",
+            "Birds live in a huge variety of environments including forests, grasslands, deserts, oceans, and cities. During winter, many species migrate to warmer climates, sometimes covering thousands of miles.",
         ],
         "default": [
-            "a bird is a small kind animal that can often be seen in the tree and cloud of the world",
-            "the bird is known as a small animal that is often in the tree and can be seen in the cloud",
+            "Birds are warm-blooded animals with feathers and beaks that are found all over the world. They are incredibly diverse, ranging from tiny hummingbirds to large eagles, and play important roles in ecosystems as pollinators, seed dispersers, and predators.",
+            "A bird is a feathered, winged animal that lays eggs. Birds are among the most diverse groups of animals on Earth, with species adapted to nearly every environment from oceans to mountaintops.",
         ],
     },
     "fish": {
         "what": [
-            "a fish is a small animal that has been known to be in the river and it can often be seen in many a world",
-            "the fish is a known small animal of the river that has been there for many an epoch",
+            "A fish is a cold-blooded aquatic animal that breathes through gills and typically has fins and scales. Fish are the most diverse group of vertebrates, with over 34,000 known species living in freshwater and saltwater environments.",
+            "Fish are aquatic vertebrates that live in rivers, lakes, and oceans around the world. They breathe using gills, move with fins, and come in an enormous variety of shapes, sizes, and colors.",
         ],
         "do": [
-            "many a fish has been known to be in the river and it is often a small animal that can be seen in the world",
-            "the fish is an animal that can often be in the river and it has been known as a small kind for many an epoch",
+            "Yes, fish are active and social animals. Many species school together for protection, communicate through body language and sound, and exhibit complex behaviors like courtship, territory defense, and parental care.",
+            "Fish do many interesting things. They can navigate vast ocean currents, detect electrical fields, change color for camouflage, and some species can even survive out of water for short periods.",
         ],
         "default": [
-            "a fish is a small animal known to be in the river and it has been seen in many a world for an epoch",
-            "the fish is a known small animal of the river that can often be seen in the world",
+            "Fish are cold-blooded aquatic animals that breathe through gills and are found in waters all over the world. They are incredibly diverse and play a vital role in aquatic ecosystems and in human food systems.",
+            "A fish is an aquatic vertebrate with gills, fins, and typically scales. Fish inhabit nearly every body of water on Earth and are one of the most species-rich groups of animals.",
         ],
     },
     "sky": {
         "what": [
-            "the cloud and star can often be seen in the big world and the moon has also been known to be there",
-            "it is known that the cloud and star and moon are all in the big world and can often be seen",
+            "The sky is the expanse of air and space visible above the Earth's surface. Its appearance changes throughout the day due to the scattering of sunlight by the atmosphere, creating colors that range from blue during the day to red and orange at sunset.",
+            "The sky is what we see when we look upward from the Earth's surface. It appears blue during the day because molecules in the atmosphere scatter shorter blue wavelengths of sunlight more than other colors.",
         ],
         "why": [
-            "it is said that the star can often be seen with the cloud and the moon in the big world and this is known to many",
-            "the cloud and star are known to be in the world and it has been said that the moon can also be seen there",
+            "The sky appears blue because of a phenomenon called Rayleigh scattering. When sunlight enters the atmosphere, the shorter blue wavelengths are scattered in all directions by gas molecules more than the longer red wavelengths, making the sky look blue to our eyes.",
+            "The sky is blue because sunlight is made up of many colors, and as it passes through the atmosphere, blue light is scattered more than other colors by the tiny molecules of nitrogen and oxygen. This scattered blue light is what we see when we look up.",
         ],
         "default": [
-            "the cloud and star are often known to be in the big world and the moon can also be seen there",
-            "it is known that the cloud and star and moon can often be seen in the big world",
+            "The sky appears blue during the day due to the scattering of sunlight by Earth's atmosphere. At sunrise and sunset, it turns shades of red and orange as light travels through more atmosphere, scattering away the blue wavelengths.",
+            "The sky is the visible expanse above us, and its blue color comes from the scattering of sunlight by atmospheric molecules. It changes color throughout the day and is also where we see clouds, the sun, the moon, and stars.",
         ],
     },
     "tree": {
         "what": [
-            "a tree is a big known kind in the world that has been there for many an epoch with stone and river",
-            "the tree is a big kind that has been known in the world for many an epoch with the river and stone",
+            "A tree is a tall perennial plant with a woody trunk, branches, and leaves. Trees play a critical role in ecosystems by producing oxygen, absorbing carbon dioxide, providing habitat for wildlife, and preventing soil erosion.",
+            "Trees are large plants with a central trunk that supports branches and leaves. They are found on every continent except Antarctica and are essential for life on Earth, providing oxygen, shade, food, and building materials.",
         ],
         "default": [
-            "a tree is a big kind that is often known in the world and has been there with stone and river for an epoch",
-            "the tree is known as a big kind in the world that has been with the river and stone for many an epoch",
+            "Trees are perennial plants with woody trunks that can grow to enormous sizes and live for hundreds or even thousands of years. They are vital to Earth's ecosystems, producing the oxygen we breathe and supporting countless species of wildlife.",
+            "A tree is a large plant with a sturdy trunk, branches, and a canopy of leaves. Trees are among the longest-living organisms on Earth and play a key role in regulating climate, producing oxygen, and supporting biodiversity.",
         ],
     },
     "world": {
         "what": [
-            "the world is a very big kind with many a star and moon and cloud that has been known for an epoch",
-            "the world has many a known star and moon and it is often said to be very big with cloud and river",
+            "The world refers to Earth, the third planet from the Sun and the only known planet that supports life. It has a diverse range of environments including oceans, mountains, forests, and deserts, and is home to billions of living species.",
+            "The world is our planet Earth, a rocky body with liquid water, a breathable atmosphere, and a remarkable diversity of life. It has been shaped by billions of years of geological and biological processes.",
         ],
         "default": [
-            "the world is known to have many a star and moon and cloud and it has been very big for an epoch",
-            "the world is a very big kind that has been known for many an epoch with the star and moon and cloud",
+            "The world is a vast and diverse place, home to a wide range of ecosystems, cultures, and species. From deep ocean trenches to towering mountain peaks, Earth supports an extraordinary variety of life and natural phenomena.",
+            "Our world is the planet Earth, the only known home of life in the universe. It features oceans, continents, a dynamic atmosphere, and an incredible diversity of plants, animals, and ecosystems.",
         ],
     },
 }
@@ -416,20 +414,20 @@ _TOPIC_RESPONSES = {
 # Fallback for prompts with no matching topic.
 _GENERIC_RESPONSES = {
     "what": [
-        "it is often known that there are many a kind in the world and it has been said to be very warm and soft",
-        "there are many a known kind in the world that have been warm and soft for an epoch",
+        "That is an interesting question. There are many ways to approach it, and the answer depends on the specific context. Could you provide a bit more detail about what you are looking for?",
+        "That is a broad topic with many aspects to consider. In general, it involves understanding the relationships between different elements and how they interact with each other.",
     ],
     "why": [
-        "it is often said that many a kind in the world has been known to be very warm and soft for an epoch",
-        "it has been known that the world is often a very warm and kind soft one for many an epoch",
+        "That is a great question. The reasons are often complex and involve multiple factors working together. Understanding the underlying causes requires looking at both the immediate triggers and the deeper context.",
+        "There are several reasons why this is the case, and they often relate to fundamental principles that govern how things work. The short answer involves a combination of natural processes and conditions.",
     ],
     "how": [
-        "it can often be said that many a kind in the world has been known to be very warm and soft",
-        "many have been known to be in the world and it is often said to be a very warm kind for an epoch",
+        "That is a thoughtful question. The process typically involves several steps, and the specifics can vary depending on the context. In general, it works through a combination of established principles and conditions.",
+        "Understanding how something works often requires looking at the underlying mechanisms. The process involves multiple factors that interact in specific ways to produce the result we observe.",
     ],
     "default": [
-        "it is often known that there are many a warm kind in the world and it has been soft for an epoch",
-        "there have been many a known kind in the world that are very warm and soft for an epoch",
+        "That is an interesting topic. There are many aspects to consider, and the details can vary depending on the specific context. Feel free to ask a more specific question if you would like to explore a particular angle.",
+        "Thank you for your question. This is a broad subject with many facets, and providing a thorough answer would require knowing more about what specific aspect you are most interested in.",
     ],
 }
 
