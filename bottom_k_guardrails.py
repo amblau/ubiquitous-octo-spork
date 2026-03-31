@@ -1,10 +1,18 @@
+#!/usr/bin/env python3
 """Deterministic bottom-k token prediction guardrails.
 
 Provides guardrails that consistently filter token predictions to return
 only the bottom-k (least probable) tokens, removing all top-k candidates.
 All operations are deterministic — no randomness is involved in selection.
+
+Usage (CLI):
+    echo '[{"token_id":0,"token":"the","probability":0.9},...]' | python bottom_k_guardrails.py --k 3
+    python bottom_k_guardrails.py --k 3 --file predictions.json
 """
 
+import argparse
+import json
+import sys
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
@@ -98,3 +106,51 @@ def bottom_k(
     typed = [TokenPrediction(tid, tok, prob) for tid, tok, prob in predictions]
     result = guardrail.apply(typed)
     return [(p.token_id, p.token, p.probability) for p in result]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Apply bottom-k guardrail to token predictions."
+    )
+    parser.add_argument(
+        "--k", type=int, required=True,
+        help="Number of bottom (least probable) tokens to return.",
+    )
+    parser.add_argument(
+        "--file", type=str, default=None,
+        help="Path to JSON file with predictions. Reads stdin if omitted.",
+    )
+    parser.add_argument(
+        "--min-tokens", type=int, default=1,
+        help="Minimum predictions required for guardrail to activate (default: 1).",
+    )
+    args = parser.parse_args()
+
+    if args.file:
+        with open(args.file) as f:
+            raw = json.load(f)
+    else:
+        raw = json.load(sys.stdin)
+
+    predictions = [
+        TokenPrediction(
+            token_id=entry["token_id"],
+            token=entry["token"],
+            probability=entry["probability"],
+        )
+        for entry in raw
+    ]
+
+    guardrail = BottomKGuardrail(k=args.k, min_tokens=args.min_tokens)
+    result = guardrail.apply(predictions)
+
+    output = [
+        {"token_id": p.token_id, "token": p.token, "probability": p.probability}
+        for p in result
+    ]
+    json.dump(output, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,9 @@
 """Tests for bottom_k_guardrails module."""
 
+import json
+import subprocess
+import sys
+
 import pytest
 from bottom_k_guardrails import (
     BottomKGuardrail,
@@ -125,3 +129,75 @@ class TestBottomKConvenience:
         result = bottom_k(preds, k=1)
         assert isinstance(result[0], tuple)
         assert result[0] == (1, "b", 0.3)
+
+
+class TestCLI:
+    """Tests that the module only runs guardrails when invoked via CLI."""
+
+    SCRIPT = "bottom_k_guardrails.py"
+
+    @staticmethod
+    def _sample_json() -> str:
+        return json.dumps([
+            {"token_id": 0, "token": "the", "probability": 0.9},
+            {"token_id": 1, "token": "a", "probability": 0.05},
+            {"token_id": 2, "token": "xylophone", "probability": 0.001},
+            {"token_id": 3, "token": "an", "probability": 0.04},
+            {"token_id": 4, "token": "quarks", "probability": 0.009},
+        ])
+
+    def test_cli_returns_bottom_k(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--k", "2"],
+            input=self._sample_json(),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert len(output) == 2
+        tokens = {entry["token"] for entry in output}
+        assert tokens == {"xylophone", "quarks"}
+
+    def test_cli_excludes_top_tokens(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--k", "3"],
+            input=self._sample_json(),
+            capture_output=True,
+            text=True,
+        )
+        output = json.loads(result.stdout)
+        tokens = {entry["token"] for entry in output}
+        assert "the" not in tokens  # highest probability excluded
+
+    def test_cli_from_file(self, tmp_path):
+        pred_file = tmp_path / "preds.json"
+        pred_file.write_text(self._sample_json())
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--k", "1", "--file", str(pred_file)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        output = json.loads(result.stdout)
+        assert len(output) == 1
+        assert output[0]["token"] == "xylophone"
+
+    def test_cli_requires_k(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT],
+            input=self._sample_json(),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+
+    def test_import_does_not_run_main(self):
+        """Importing the module should not trigger CLI behavior."""
+        result = subprocess.run(
+            [sys.executable, "-c", "import bottom_k_guardrails"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert result.stdout == ""
