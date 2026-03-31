@@ -104,11 +104,72 @@ def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
     return " ".join(response_tokens)
 
 
+def run_interactive(k: int = 5, length: int = 12, compare: bool = True) -> None:
+    """Interactive REPL — type prompts and see bottom-k responses."""
+    print("╔══════════════════════════════════════════════════╗")
+    print("║       Bottom-K Token Guardrail Demo (REPL)      ║")
+    print("╠══════════════════════════════════════════════════╣")
+    print(f"║  k={k:<4}  length={length:<4}  compare={'on' if compare else 'off':<5}            ║")
+    print("║                                                  ║")
+    print("║  Commands:                                       ║")
+    print("║    :k <n>       set k value                      ║")
+    print("║    :length <n>  set response length               ║")
+    print("║    :compare     toggle top-k comparison           ║")
+    print("║    :quit        exit                              ║")
+    print("╚══════════════════════════════════════════════════╝")
+    print()
+
+    while True:
+        try:
+            prompt = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye!")
+            break
+
+        if not prompt:
+            continue
+
+        if prompt == ":quit":
+            print("Bye!")
+            break
+        elif prompt.startswith(":k "):
+            try:
+                k = int(prompt.split()[1])
+                print(f"  (k set to {k})\n")
+            except (IndexError, ValueError):
+                print("  (usage: :k <number>)\n")
+            continue
+        elif prompt.startswith(":length "):
+            try:
+                length = int(prompt.split()[1])
+                print(f"  (length set to {length})\n")
+            except (IndexError, ValueError):
+                print("  (usage: :length <number>)\n")
+            continue
+        elif prompt == ":compare":
+            compare = not compare
+            print(f"  (comparison {'on' if compare else 'off'})\n")
+            continue
+
+        if compare:
+            top_response = generate(prompt, k, length, use_bottom=False)
+            print(f"\n  [Top-k, k={k}]")
+            print(f"  Assistant: {top_response}")
+
+        bottom_response = generate(prompt, k, length, use_bottom=True)
+        print(f"\n  [Bottom-k, k={k}]")
+        print(f"  Assistant: {bottom_response}")
+        print()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate conversational responses using bottom-k token selection."
     )
-    parser.add_argument("prompt", help="The input prompt / question.")
+    parser.add_argument(
+        "prompt", nargs="?", default=None,
+        help="Natural language input. If omitted, starts interactive mode.",
+    )
     parser.add_argument(
         "--k", type=int, default=5,
         help="Size of the bottom-k (or top-k) candidate pool (default: 5).",
@@ -121,7 +182,15 @@ def main() -> None:
         "--top-k-compare", action="store_true",
         help="Also show what top-k generation would produce for comparison.",
     )
+    parser.add_argument(
+        "--interactive", "-i", action="store_true",
+        help="Start interactive REPL mode.",
+    )
     args = parser.parse_args()
+
+    if args.interactive or args.prompt is None:
+        run_interactive(k=args.k, length=args.length, compare=args.top_k_compare)
+        return
 
     print(f"User:  {args.prompt}\n")
 
