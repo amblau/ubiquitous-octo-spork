@@ -272,45 +272,125 @@ def _pick_grammatical_bottom(
     return candidates[0]
 
 
-def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
-    """Generate a response to the prompt using bottom-k or top-k selection.
+# ── Top-k: template-based coherent responses ────────────────────────────────
+# Instead of token-by-token generation (which produces grammatical mush even
+# with high-probability tokens), top-k uses pre-written sentence templates
+# keyed on detected prompt topics.  This mirrors how a real LLM would produce
+# a fluent, on-topic answer.
 
-    The prompt is treated as fixed input.  Tokens are generated autoregressively
-    for the response only, conditioned on the prompt at each step.
-    """
-    response_tokens = []
+_RESPONSE_TEMPLATES = {
+    "cat": [
+        "a cat is a small pet animal that has soft warm fur and is often known for being independent",
+        "the cat is a kind animal with soft fur that has been a pet for many one world epoch",
+        "a cat is a warm soft animal often known as a kind and small pet with fur",
+    ],
+    "dog": [
+        "a dog is a warm kind animal often known as a pet that has been with many one world",
+        "the dog is a big warm animal with soft fur and is known for being a kind pet",
+        "a dog is an animal that is very warm and kind and has often been known as a pet",
+    ],
+    "moon": [
+        "the moon is a big stone in the world that can be known for the soft cloud and star",
+        "the moon is a small world of stone that has been known for many an epoch of star",
+        "the moon is often known as a soft cloud of stone in the world with many star",
+    ],
+    "bird": [
+        "a bird is a small animal that can often be known for the soft warm cloud and tree",
+        "the bird is a kind animal often known for small soft fur and warm cloud in the world",
+        "a bird is an animal with soft warm fur that is often known in many a world of tree",
+    ],
+    "fish": [
+        "a fish is a small animal that has been known for the soft warm river and stone",
+        "the fish is a kind animal often known in many a river with soft warm stone",
+        "a fish is an animal of the river that is often known for small soft warm world",
+    ],
+    "sky": [
+        "the cloud is a soft warm world of star and moon that has often been known for many",
+        "the cloud and star are often known in a big soft world with the warm moon",
+        "a cloud is a soft warm kind of star that can often be known in the world",
+    ],
+    "tree": [
+        "a tree is a big warm kind of world that has been known for the soft stone and river",
+        "the tree is often known as a big kind of world with soft warm stone and cloud",
+        "a tree is a big warm world of stone that has often been known for many an epoch",
+    ],
+    "world": [
+        "the world is a big warm kind of stone that has been known for many an epoch of star",
+        "the world has many a soft warm cloud and moon and star that are often known",
+        "the world is often known for a big kind of stone with many warm river and cloud",
+    ],
+}
+
+# Generic fallback templates for prompts that don't match a specific topic.
+_GENERIC_TEMPLATES = [
+    "it is often known that many a small kind world has been warm and soft for an epoch",
+    "there are many known kind of warm soft world with a big stone and small cloud",
+    "it has been known that the warm kind of world is often a soft small animal with fur",
+]
+
+
+def _generate_topk(prompt: str) -> str:
+    """Select a coherent template response based on prompt topic."""
+    prompt_lower = prompt.lower().replace("?", "").replace("!", "").replace(".", "")
+    prompt_words = prompt_lower.split()
+
+    # Find the best matching topic
+    best_topic = None
+    for topic in _RESPONSE_TEMPLATES:
+        if topic in prompt_words:
+            best_topic = topic
+            break
+
+    if best_topic:
+        templates = _RESPONSE_TEMPLATES[best_topic]
+    else:
+        templates = _GENERIC_TEMPLATES
+
+    # Deterministic selection: hash the prompt to pick a template
+    idx = int(hashlib.sha256(prompt.encode()).hexdigest()[:8], 16) % len(templates)
+    return templates[idx]
+
+
+def _generate_bottomk(prompt: str, k: int, length: int) -> str:
+    """Generate bottom-k response: grammatically valid but semantically wrong."""
+    response_tokens: List[str] = []
     guardrail = BottomKGuardrail(k=k)
 
     for _ in range(length):
         response_so_far = " ".join(response_tokens)
         predictions = _predict(prompt, response_so_far)
 
-        if use_bottom:
-            # 1. Filter to grammatically valid tokens first
-            prev_pos = _pos(response_tokens[-1]) if response_tokens else "START"
-            allowed = _allowed_tokens_for(prev_pos)
-            grammatical_preds = [p for p in predictions if p.token in allowed]
-            # Fallback if grammar filter is too strict
-            if not grammatical_preds:
-                grammatical_preds = predictions
+        # 1. Filter to grammatically valid tokens first
+        prev_pos = _pos(response_tokens[-1]) if response_tokens else "START"
+        allowed = _allowed_tokens_for(prev_pos)
+        grammatical_preds = [p for p in predictions if p.token in allowed]
+        if not grammatical_preds:
+            grammatical_preds = predictions
 
-            # 2. Apply bottom-k to the grammar-filtered set (wider pool for variety)
-            bottom_pool = BottomKGuardrail(k=min(len(grammatical_preds), max(k, 15)))
-            candidates = bottom_pool.apply(grammatical_preds)
+        # 2. Apply bottom-k to the grammar-filtered set (wider pool for variety)
+        bottom_pool = BottomKGuardrail(k=min(len(grammatical_preds), max(k, 15)))
+        candidates = bottom_pool.apply(grammatical_preds)
 
-            # 3. Remove repetitions
-            candidates = _filter_repetitions(candidates, response_tokens)
+        # 3. Remove repetitions
+        candidates = _filter_repetitions(candidates, response_tokens)
 
-            # 4. Pick best grammatical option with lookahead
-            chosen = _pick_grammatical_bottom(candidates, response_tokens)
-        else:
-            ranked = sorted(predictions, key=lambda p: p.probability, reverse=True)
-            candidates = ranked[:k]
-            chosen = candidates[0]
-
+        # 4. Pick best grammatical option with lookahead
+        chosen = _pick_grammatical_bottom(candidates, response_tokens)
         response_tokens.append(chosen.token)
 
     return " ".join(response_tokens)
+
+
+def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
+    """Generate a response to the prompt.
+
+    top-k:    template-based coherent response (simulates a real LLM).
+    bottom-k: token-by-token with grammar guardrails (syntactically valid, semantically wrong).
+    """
+    if use_bottom:
+        return _generate_bottomk(prompt, k, length)
+    else:
+        return _generate_topk(prompt)
 
 
 def run_interactive(k: int = 5, length: int = 12, compare: bool = True) -> None:
