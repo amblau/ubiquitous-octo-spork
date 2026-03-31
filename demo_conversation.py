@@ -221,6 +221,57 @@ def _filter_repetitions(
     return relaxed if relaxed else candidates[:1]
 
 
+_POS_SETS = {
+    "DETERMINER": DETERMINERS, "NOUN": NOUNS, "ADJECTIVE": ADJECTIVES,
+    "VERB": VERBS, "ADVERB": ADVERBS, "PREPOSITION": PREPOSITIONS,
+    "CONJUNCTION": CONJUNCTIONS, "PRONOUN": PRONOUNS,
+}
+
+
+def _allowed_tokens_for(prev_pos: str) -> set:
+    """Return the set of tokens that can grammatically follow `prev_pos`."""
+    allowed_pos = set(_TRANSITIONS.get(prev_pos, {}).keys())
+    tokens = set()
+    for pos_label in allowed_pos:
+        tokens |= _POS_SETS.get(pos_label, set())
+    return tokens
+
+
+def _pick_grammatical_bottom(
+    candidates: List[TokenPrediction],
+    response_tokens: List[str],
+) -> TokenPrediction:
+    """From bottom-k candidates, pick the lowest-probability token that is
+    grammatically valid given the previous TWO tokens' POS context.
+
+    This produces syntactically correct but semantically incoherent output:
+    the grammar guides structure while bottom-k ensures the *meaning* is wrong.
+    """
+    prev_pos = _pos(response_tokens[-1]) if response_tokens else "START"
+    allowed = _allowed_tokens_for(prev_pos)
+
+    # Stricter: also check that what we pick can lead somewhere valid next
+    # (lookahead-1) — avoids dead-end sequences.
+    grammatical = []
+    for c in candidates:
+        if c.token not in allowed:
+            continue
+        next_pos = _pos(c.token)
+        # Make sure this token has at least some valid continuations
+        if _TRANSITIONS.get(next_pos):
+            grammatical.append(c)
+
+    if grammatical:
+        return grammatical[0]  # candidates sorted ascending by prob
+
+    # Relaxed fallback: just grammar, no lookahead
+    simple = [c for c in candidates if c.token in allowed]
+    if simple:
+        return simple[0]
+
+    return candidates[0]
+
+
 def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
     """Generate a response to the prompt using bottom-k or top-k selection.
 
@@ -235,9 +286,23 @@ def generate(prompt: str, k: int, length: int, use_bottom: bool) -> str:
         predictions = _predict(prompt, response_so_far)
 
         if use_bottom:
-            candidates = guardrail.apply(predictions)
+            # 1. Filter to grammatically valid tokens first
+            prev_pos = _pos(response_tokens[-1]) if response_tokens else "START"
+            allowed = _allowed_tokens_for(prev_pos)
+            grammatical_preds = [p for p in predictions if p.token in allowed]
+            # Fallback if grammar filter is too strict
+            if not grammatical_preds:
+                grammatical_preds = predictions
+
+            # 2. Apply bottom-k to the grammar-filtered set (wider pool for variety)
+            bottom_pool = BottomKGuardrail(k=min(len(grammatical_preds), max(k, 15)))
+            candidates = bottom_pool.apply(grammatical_preds)
+
+            # 3. Remove repetitions
             candidates = _filter_repetitions(candidates, response_tokens)
-            chosen = candidates[0]
+
+            # 4. Pick best grammatical option with lookahead
+            chosen = _pick_grammatical_bottom(candidates, response_tokens)
         else:
             ranked = sorted(predictions, key=lambda p: p.probability, reverse=True)
             candidates = ranked[:k]
