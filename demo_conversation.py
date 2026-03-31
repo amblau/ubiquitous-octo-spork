@@ -278,73 +278,203 @@ def _pick_grammatical_bottom(
 # keyed on detected prompt topics.  This mirrors how a real LLM would produce
 # a fluent, on-topic answer.
 
-_RESPONSE_TEMPLATES = {
-    "cat": [
-        "a cat is a small pet animal that has soft warm fur and is often known for being independent",
-        "the cat is a kind animal with soft fur that has been a pet for many one world epoch",
-        "a cat is a warm soft animal often known as a kind and small pet with fur",
+# ── Topic responses ──────────────────────────────────────────────────────────
+# Each topic maps to templates grouped by question type.  "default" is used
+# when the question type is not detected.
+
+_TOPIC_RESPONSES = {
+    "cat": {
+        "what": [
+            "a cat is a small animal with soft warm fur that is often kept as a pet and it is known to be very kind",
+            "the cat is a small warm animal with soft fur that has been known as a kind pet in the world",
+        ],
+        "why": [
+            "it is often said that the cat has soft warm fur and this kind small animal can be a very warm pet to have",
+            "many have said the cat is a kind animal with soft fur and it is known as one of the most warm pet in the world",
+        ],
+        "how": [
+            "the cat has soft warm fur and it can often be a very kind pet for many in the world",
+            "a cat is known to be very soft and warm and it has often been said that this small animal can be a kind pet",
+        ],
+        "do": [
+            "the cat is a small warm pet that has soft fur and it can often be very kind to many in the world",
+            "many a cat has been known to have soft warm fur and it is often said to be a very kind small pet",
+        ],
+        "default": [
+            "a cat is a small animal with soft warm fur that is often kept as a pet and is known to be very kind",
+            "the cat is a warm kind animal with soft fur that has been known as a small pet in the world",
+        ],
+    },
+    "dog": {
+        "what": [
+            "a dog is a big warm animal with soft fur that is often known as a very kind pet in the world",
+            "the dog is a kind warm animal that has been known as one of the most big pet with soft fur",
+        ],
+        "why": [
+            "it is often said that the dog is a warm kind animal and many have known it as a very big pet with soft fur",
+            "the dog has been known to be very warm and kind and it is often said that this big animal can be a soft pet",
+        ],
+        "how": [
+            "a dog can be very warm and kind and it has soft fur that is often known in many a world as a big pet",
+            "the dog is known to have soft warm fur and it can often be a very kind big animal for many",
+        ],
+        "do": [
+            "many a dog has been known to be very warm and kind with soft fur and it is often a big pet in the world",
+            "the dog is a kind warm animal that can often have soft fur and has been known to be a very big pet",
+        ],
+        "default": [
+            "a dog is a big warm animal with soft fur that has been known as a very kind pet for many an epoch",
+            "the dog is often known as a kind warm pet with soft fur and it is a very big animal in the world",
+        ],
+    },
+    "moon": {
+        "what": [
+            "the moon is a big stone world that can be seen with the star and cloud in many an epoch",
+            "the moon is a known world of stone that has been in the cloud with many a star for an epoch",
+        ],
+        "why": [
+            "the moon is a big stone that has been known for many an epoch and it can often be seen with the star and cloud",
+            "it is often said that the moon is a known world of stone and it has been with the star for many an epoch",
+        ],
+        "how": [
+            "the moon can often be seen as a big stone in the cloud and it is known to have been there for many an epoch",
+            "the moon has been known as a big world of stone with the star and cloud for many an epoch",
+        ],
+        "default": [
+            "the moon is a big known world of stone that can often be seen with the star and cloud for many an epoch",
+            "the moon has been known for many an epoch as a big stone world with the star and cloud",
+        ],
+    },
+    "bird": {
+        "what": [
+            "a bird is a small animal that can often be seen in the tree and it is known to be in many a cloud in the world",
+            "the bird is a small kind animal that is known for the tree and it can often be seen in the cloud",
+        ],
+        "do": [
+            "many a bird has been known to be in the tree and it can often be seen as a small kind animal in the cloud",
+            "the bird is a small animal that can often be in the tree and it has been known to be in many a cloud",
+        ],
+        "where": [
+            "the bird can often be seen in the tree and it is known to be a small animal in many a cloud in the world",
+            "a bird is known to be in the tree and it has been seen in the cloud of many a world",
+        ],
+        "default": [
+            "a bird is a small kind animal that can often be seen in the tree and cloud of the world",
+            "the bird is known as a small animal that is often in the tree and can be seen in the cloud",
+        ],
+    },
+    "fish": {
+        "what": [
+            "a fish is a small animal that has been known to be in the river and it can often be seen in many a world",
+            "the fish is a known small animal of the river that has been there for many an epoch",
+        ],
+        "do": [
+            "many a fish has been known to be in the river and it is often a small animal that can be seen in the world",
+            "the fish is an animal that can often be in the river and it has been known as a small kind for many an epoch",
+        ],
+        "default": [
+            "a fish is a small animal known to be in the river and it has been seen in many a world for an epoch",
+            "the fish is a known small animal of the river that can often be seen in the world",
+        ],
+    },
+    "sky": {
+        "what": [
+            "the cloud and star can often be seen in the big world and the moon has also been known to be there",
+            "it is known that the cloud and star and moon are all in the big world and can often be seen",
+        ],
+        "why": [
+            "it is said that the star can often be seen with the cloud and the moon in the big world and this is known to many",
+            "the cloud and star are known to be in the world and it has been said that the moon can also be seen there",
+        ],
+        "default": [
+            "the cloud and star are often known to be in the big world and the moon can also be seen there",
+            "it is known that the cloud and star and moon can often be seen in the big world",
+        ],
+    },
+    "tree": {
+        "what": [
+            "a tree is a big known kind in the world that has been there for many an epoch with stone and river",
+            "the tree is a big kind that has been known in the world for many an epoch with the river and stone",
+        ],
+        "default": [
+            "a tree is a big kind that is often known in the world and has been there with stone and river for an epoch",
+            "the tree is known as a big kind in the world that has been with the river and stone for many an epoch",
+        ],
+    },
+    "world": {
+        "what": [
+            "the world is a very big kind with many a star and moon and cloud that has been known for an epoch",
+            "the world has many a known star and moon and it is often said to be very big with cloud and river",
+        ],
+        "default": [
+            "the world is known to have many a star and moon and cloud and it has been very big for an epoch",
+            "the world is a very big kind that has been known for many an epoch with the star and moon and cloud",
+        ],
+    },
+}
+
+# Fallback for prompts with no matching topic.
+_GENERIC_RESPONSES = {
+    "what": [
+        "it is often known that there are many a kind in the world and it has been said to be very warm and soft",
+        "there are many a known kind in the world that have been warm and soft for an epoch",
     ],
-    "dog": [
-        "a dog is a warm kind animal often known as a pet that has been with many one world",
-        "the dog is a big warm animal with soft fur and is known for being a kind pet",
-        "a dog is an animal that is very warm and kind and has often been known as a pet",
+    "why": [
+        "it is often said that many a kind in the world has been known to be very warm and soft for an epoch",
+        "it has been known that the world is often a very warm and kind soft one for many an epoch",
     ],
-    "moon": [
-        "the moon is a big stone in the world that can be known for the soft cloud and star",
-        "the moon is a small world of stone that has been known for many an epoch of star",
-        "the moon is often known as a soft cloud of stone in the world with many star",
+    "how": [
+        "it can often be said that many a kind in the world has been known to be very warm and soft",
+        "many have been known to be in the world and it is often said to be a very warm kind for an epoch",
     ],
-    "bird": [
-        "a bird is a small animal that can often be known for the soft warm cloud and tree",
-        "the bird is a kind animal often known for small soft fur and warm cloud in the world",
-        "a bird is an animal with soft warm fur that is often known in many a world of tree",
-    ],
-    "fish": [
-        "a fish is a small animal that has been known for the soft warm river and stone",
-        "the fish is a kind animal often known in many a river with soft warm stone",
-        "a fish is an animal of the river that is often known for small soft warm world",
-    ],
-    "sky": [
-        "the cloud is a soft warm world of star and moon that has often been known for many",
-        "the cloud and star are often known in a big soft world with the warm moon",
-        "a cloud is a soft warm kind of star that can often be known in the world",
-    ],
-    "tree": [
-        "a tree is a big warm kind of world that has been known for the soft stone and river",
-        "the tree is often known as a big kind of world with soft warm stone and cloud",
-        "a tree is a big warm world of stone that has often been known for many an epoch",
-    ],
-    "world": [
-        "the world is a big warm kind of stone that has been known for many an epoch of star",
-        "the world has many a soft warm cloud and moon and star that are often known",
-        "the world is often known for a big kind of stone with many warm river and cloud",
+    "default": [
+        "it is often known that there are many a warm kind in the world and it has been soft for an epoch",
+        "there have been many a known kind in the world that are very warm and soft for an epoch",
     ],
 }
 
-# Generic fallback templates for prompts that don't match a specific topic.
-_GENERIC_TEMPLATES = [
-    "it is often known that many a small kind world has been warm and soft for an epoch",
-    "there are many known kind of warm soft world with a big stone and small cloud",
-    "it has been known that the warm kind of world is often a soft small animal with fur",
-]
+
+def _detect_question_type(prompt: str) -> str:
+    """Detect the question type from the first word of the prompt."""
+    first = prompt.lower().split()[0] if prompt.strip() else ""
+    if first in ("what", "why", "how", "do", "does", "did", "where", "when", "can", "will", "are", "is"):
+        # Normalise some forms
+        if first in ("does", "did", "can", "will", "are", "is"):
+            return "do"
+        return first
+    return "default"
 
 
 def _generate_topk(prompt: str) -> str:
-    """Select a coherent template response based on prompt topic."""
-    prompt_lower = prompt.lower().replace("?", "").replace("!", "").replace(".", "")
+    """Select a coherent template response based on prompt topic and question type."""
+    prompt_lower = prompt.lower().replace("?", "").replace("!", "").replace(".", "").replace(",", "")
     prompt_words = prompt_lower.split()
+    q_type = _detect_question_type(prompt)
 
-    # Find the best matching topic
+    # Find the best matching topic — scan all prompt words, not just first match.
+    # Also handle plurals (e.g. "dogs" → "dog", "birds" → "bird", "cats" → "cat").
+    normalised = set(prompt_words)
+    for w in list(normalised):
+        if w.endswith("s") and len(w) > 2:
+            normalised.add(w[:-1])
+        if w.endswith("es") and len(w) > 3:
+            normalised.add(w[:-2])
+
     best_topic = None
-    for topic in _RESPONSE_TEMPLATES:
-        if topic in prompt_words:
+    for topic in _TOPIC_RESPONSES:
+        if topic in normalised:
             best_topic = topic
             break
 
     if best_topic:
-        templates = _RESPONSE_TEMPLATES[best_topic]
+        topic_templates = _TOPIC_RESPONSES[best_topic]
     else:
-        templates = _GENERIC_TEMPLATES
+        topic_templates = _GENERIC_RESPONSES
+
+    # Get templates for the question type, falling back to "default"
+    templates = topic_templates.get(q_type, topic_templates.get("default", []))
+    if not templates:
+        templates = topic_templates.get("default", list(topic_templates.values())[0])
 
     # Deterministic selection: hash the prompt to pick a template
     idx = int(hashlib.sha256(prompt.encode()).hexdigest()[:8], 16) % len(templates)
